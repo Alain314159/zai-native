@@ -1,0 +1,22 @@
+# Android
+*.apk
+*.aab
+*.dex
+*.class
+build/
+.gradle/
+local.properties
+*.keystore
+*.jks
+.idea/
+*.iml
+captures/
+
+# Gradle
+.gradle/
+build/
+
+# Misc
+.DS_Store
+*.log
+.env
