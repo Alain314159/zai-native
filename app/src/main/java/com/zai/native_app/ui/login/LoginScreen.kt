@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
 import com.zai.native_app.data.TokenManager
 
 /**
@@ -155,5 +156,3 @@ fun LoginScreen(
     }
 }
 
-// Need these imports
-import kotlinx.coroutines.launch

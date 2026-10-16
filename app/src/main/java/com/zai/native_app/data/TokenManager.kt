@@ -3,6 +3,7 @@ package com.zai.native_app.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -46,4 +47,3 @@ class TokenManager(private val context: Context) {
 }
 
 // Need import for edit
-import androidx.datastore.preferences.core.edit
