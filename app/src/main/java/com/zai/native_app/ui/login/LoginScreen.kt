@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.dp
 import com.zai.native_app.data.TokenManager
 
 /**
@@ -149,7 +150,7 @@ fun LoginScreen(
             ) {
                 Text(
                     text = status,
-                    modifier = Modifier.padding(androidx.compose.ui.unit.dp(16))
+                    modifier = Modifier.padding(dp(16))
                 )
             }
         }

@@ -94,9 +94,11 @@ fun ChatScreen(
                     MessageBubble(message)
                 }
                 if (currentResponse.isNotEmpty()) {
-                    MessageBubble(
-                        ChatMessage(role = "assistant", content = currentResponse)
-                    )
+                    item {
+                        MessageBubble(
+                            ChatMessage(role = "assistant", content = currentResponse)
+                        )
+                    }
                 }
                 if (isStreaming && currentResponse.isEmpty()) {
                     item {
