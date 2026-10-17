@@ -1,16 +1,19 @@
 package com.zai.native_app.ui.chat
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.zai.native_app.data.TokenManager
 import com.zai.native_app.data.api.StreamListener
 import com.zai.native_app.data.api.ZaiApiClient
+import com.zai.native_app.data.repo.ChatRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.sse.EventSource
 import com.google.gson.JsonParser
+import java.util.UUID
 
 class ChatViewModel : ViewModel() {
 
@@ -23,32 +26,64 @@ class ChatViewModel : ViewModel() {
     private val _currentResponse = MutableStateFlow("")
     val currentResponse: StateFlow<String> = _currentResponse.asStateFlow()
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
     private var currentEventSource: EventSource? = null
     private var currentChatId: String? = null
     private var apiClient: ZaiApiClient? = null
+    private var repository: ChatRepository? = null
+    private var messageSeq = 0
 
-    fun sendMessage(text: String, tokenManager: TokenManager) {
-        // Add user message
-        _messages.value = _messages.value + ChatMessage("user", text)
+    fun init(context: Context) {
+        if (repository == null) {
+            repository = ChatRepository(context)
+        }
+    }
+
+    fun loadChat(chatId: String, context: Context) {
+        currentChatId = chatId
+        init(context)
+        viewModelScope.launch {
+            val msgs = repository?.getMessages(chatId) ?: emptyList()
+            _messages.value = msgs.map { ChatMessage(it.role, it.content) }
+            messageSeq = msgs.maxOfOrNull { it.seq }?.plus(1) ?: 0
+        }
+    }
+
+    fun newChat() {
+        currentChatId = null
+        _messages.value = emptyList()
+        messageSeq = 0
+        _currentResponse.value = ""
+        _error.value = null
+    }
+
+    fun sendMessage(text: String, tokenManager: TokenManager, context: Context) {
+        if (text.isBlank()) return
+        init(context)
+
+        val userMsg = ChatMessage("user", text)
+        _messages.value = _messages.value + userMsg
         _isStreaming.value = true
         _currentResponse.value = ""
+        _error.value = null
 
         viewModelScope.launch {
-            val token = tokenManager.token
-            val model = tokenManager.selectedModel
-
             if (apiClient == null) {
                 apiClient = ZaiApiClient { tokenManager.getTokenSync() }
             }
 
-            // Create chat if not exists
+            // Create local chat if needed
+            val chatId = currentChatId ?: UUID.randomUUID().toString()
             if (currentChatId == null) {
-                currentChatId = try {
-                    apiClient?.createChat(model = "glm-5.3")
-                } catch (e: Exception) {
-                    null
-                }
+                currentChatId = chatId
+                val title = text.take(40)
+                repository?.createChat(chatId, title)
             }
+
+            // Save user message locally
+            repository?.addMessage(chatId, "user", text, messageSeq++)
 
             // Build message history
             val messageHistory = _messages.value.map { it.role to it.content }
@@ -57,67 +92,54 @@ class ChatViewModel : ViewModel() {
             currentEventSource = apiClient?.sendStreamingMessage(
                 model = "glm-5.3",
                 messages = messageHistory,
-                chatId = currentChatId,
+                chatId = null, // don't send remote chat_id for now
                 listener = object : StreamListener {
-                    override fun onOpen() {
-                        // Stream started
-                    }
+                    override fun onOpen() {}
 
                     override fun onEvent(data: String) {
                         if (data == "[DONE]") {
-                            // Stream finished
-                            val finalResponse = _currentResponse.value
-                            if (finalResponse.isNotEmpty()) {
-                                _messages.value = _messages.value + ChatMessage("assistant", finalResponse)
-                            }
-                            _currentResponse.value = ""
-                            _isStreaming.value = false
+                            finalizeResponse(chatId)
                             return
                         }
 
                         try {
                             val json = JsonParser.parseString(data).asJsonObject
 
-                            // chat.z.ai format: {"data":{"data":{...}},"type":"chat:completion"}
+                            // chat.z.ai format
                             val dataObj = json.getAsJsonObject("data")
                             if (dataObj != null) {
                                 val innerData = dataObj.getAsJsonObject("data")
                                 if (innerData != null) {
-                                    // Check for error
                                     if (innerData.has("error")) {
-                                        val error = innerData.getAsJsonObject("error")
-                                        val errorMsg = error?.get("detail")?.asString ?: "Error"
-                                        _currentResponse.value = "⚠️ $errorMsg"
+                                        val errorObj = innerData.getAsJsonObject("error")
+                                        val errorMsg = errorObj?.get("detail")?.asString ?: "Error"
+                                        _error.value = errorMsg
                                         _isStreaming.value = false
                                         return
                                     }
-
-                                    // Check for content
                                     if (innerData.has("content")) {
                                         val content = innerData.get("content").asString
                                         _currentResponse.value += content
                                     }
-
-                                    // Check for done
                                     if (innerData.has("done") && innerData.get("done").asBoolean) {
-                                        if (_currentResponse.value.isNotEmpty()) {
-                                            _messages.value = _messages.value + ChatMessage("assistant", _currentResponse.value)
-                                        }
-                                        _currentResponse.value = ""
-                                        _isStreaming.value = false
+                                        finalizeResponse(chatId)
                                     }
                                     return
                                 }
                             }
 
-                            // Standard OpenAI format: {"choices":[{"delta":{"content":"..."}}]}
+                            // Standard OpenAI format
                             val choices = json.getAsJsonArray("choices")
                             if (choices != null && choices.size() > 0) {
-                                val delta = choices[0].asJsonObject
-                                    .getAsJsonObject("delta")
+                                val delta = choices[0].asJsonObject.getAsJsonObject("delta")
                                 if (delta != null && delta.has("content")) {
-                                    val content = delta.get("content").asString
-                                    _currentResponse.value += content
+                                    _currentResponse.value += delta.get("content").asString
+                                }
+                                if (choices[0].asJsonObject.has("finish_reason")) {
+                                    val fr = choices[0].asJsonObject.get("finish_reason")
+                                    if (!fr.isJsonNull && fr.asString != "null") {
+                                        finalizeResponse(chatId)
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
@@ -126,15 +148,11 @@ class ChatViewModel : ViewModel() {
                     }
 
                     override fun onClosed() {
-                        if (_currentResponse.value.isNotEmpty()) {
-                            _messages.value = _messages.value + ChatMessage("assistant", _currentResponse.value)
-                        }
-                        _currentResponse.value = ""
-                        _isStreaming.value = false
+                        finalizeResponse(chatId)
                     }
 
                     override fun onError(message: String, code: Int) {
-                        _currentResponse.value = "❌ Error: $message (code: $code)"
+                        _error.value = "Error $code: $message"
                         _isStreaming.value = false
                     }
                 }
@@ -142,14 +160,22 @@ class ChatViewModel : ViewModel() {
         }
     }
 
-    fun stopStreaming() {
-        currentEventSource?.cancel()
-        currentEventSource = null
-        if (_currentResponse.value.isNotEmpty()) {
-            _messages.value = _messages.value + ChatMessage("assistant", _currentResponse.value)
+    private fun finalizeResponse(chatId: String) {
+        val response = _currentResponse.value
+        if (response.isNotEmpty()) {
+            _messages.value = _messages.value + ChatMessage("assistant", response)
+            viewModelScope.launch {
+                repository?.addMessage(chatId, "assistant", response, messageSeq++)
+            }
         }
         _currentResponse.value = ""
         _isStreaming.value = false
+    }
+
+    fun stopStreaming() {
+        currentEventSource?.cancel()
+        currentEventSource = null
+        currentChatId?.let { finalizeResponse(it) }
     }
 
     override fun onCleared() {
@@ -157,3 +183,8 @@ class ChatViewModel : ViewModel() {
         currentEventSource?.cancel()
     }
 }
+
+data class ChatMessage(
+    val role: String,
+    val content: String
+)

@@ -9,73 +9,103 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.zai.native_app.data.api.StreamListener
-import com.zai.native_app.data.api.ZaiApiClient
+import com.mikepenz.markdown.m3.Markdown
 import com.zai.native_app.data.TokenManager
 import okhttp3.sse.EventSource
 
-/**
- * Pantalla principal de chat con streaming nativo.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     navController: NavController,
     tokenManager: TokenManager,
+    chatId: String? = null,
     viewModel: ChatViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val messages by viewModel.messages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val currentResponse by viewModel.currentResponse.collectAsState()
+    val error by viewModel.error.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom when new messages arrive
+    // Initialize and load chat
+    LaunchedEffect(chatId) {
+        if (chatId != null) {
+            viewModel.loadChat(chatId, context)
+        } else {
+            viewModel.newChat()
+        }
+    }
+
+    // Auto-scroll
     LaunchedEffect(messages.size, currentResponse) {
-        if (messages.isNotEmpty() || currentResponse.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size)
+        val total = messages.size + if (currentResponse.isNotEmpty()) 1 else 0
+        if (total > 0) {
+            listState.animateScrollToItem(total - 1)
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Z.ai Chat") },
+                title = { Text("Z.ai", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        viewModel.newChat()
+                        navController.navigate("chat") { popUpTo("chat_list") }
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "New Chat", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1A1A),
-                    titleContentColor = Color.White
+                    containerColor = Color(0xFF1A1A1A)
                 )
             )
         },
         bottomBar = {
-            BottomBar(
-                inputText = inputText,
-                onInputChange = { inputText = it },
-                onSend = {
-                    if (inputText.isNotBlank() && !isStreaming) {
-                        viewModel.sendMessage(inputText, tokenManager)
-                        inputText = ""
-                    }
-                },
-                isStreaming = isStreaming,
-                onStop = { viewModel.stopStreaming() }
-            )
+            Column {
+                if (error != null) {
+                    Text(
+                        text = error!!,
+                        color = Color(0xFFEF4444),
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF2A1A1A))
+                            .padding(8.dp)
+                    )
+                }
+                BottomBar(
+                    inputText = inputText,
+                    onInputChange = { inputText = it },
+                    onSend = {
+                        if (inputText.isNotBlank() && !isStreaming) {
+                            viewModel.sendMessage(inputText, tokenManager, context)
+                            inputText = ""
+                        }
+                    },
+                    isStreaming = isStreaming,
+                    onStop = { viewModel.stopStreaming() }
+                )
+            }
         }
     ) { paddingValues ->
         Column(
@@ -84,35 +114,44 @@ fun ChatScreen(
                 .background(Color(0xFF0A0A0A))
                 .padding(paddingValues)
         ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages) { message ->
-                    MessageBubble(message)
+            if (messages.isEmpty() && currentResponse.isEmpty() && !isStreaming) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Envía un mensaje para empezar",
+                        color = Color(0xFF666666),
+                        fontSize = 16.sp
+                    )
                 }
-                if (currentResponse.isNotEmpty()) {
-                    item {
-                        MessageBubble(
-                            ChatMessage(role = "assistant", content = currentResponse)
-                        )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages) { message ->
+                        MessageBubble(message)
                     }
-                }
-                if (isStreaming && currentResponse.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF3B82F6)
-                            )
+                    if (currentResponse.isNotEmpty()) {
+                        item {
+                            MessageBubble(ChatMessage("assistant", currentResponse))
+                        }
+                    }
+                    if (isStreaming && currentResponse.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFF3B82F6)
+                                )
+                            }
                         }
                     }
                 }
@@ -167,11 +206,7 @@ private fun BottomBar(
                 containerColor = Color(0xFF3B82F6),
                 modifier = Modifier.size(48.dp)
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = Color.White
-                )
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
             }
         }
     }
@@ -187,21 +222,27 @@ private fun MessageBubble(message: ChatMessage) {
         Surface(
             color = if (isUser) Color(0xFF1E3A5F) else Color(0xFF1A1A1A),
             shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
+                topStart = 16.dp, topEnd = 16.dp,
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Text(
-                text = message.content,
-                color = Color.White,
-                fontSize = 15.sp,
-                lineHeight = 22.sp,
-                modifier = Modifier.padding(12.dp),
-                fontFamily = FontFamily.Default
-            )
+            if (isUser) {
+                Text(
+                    text = message.content,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    modifier = Modifier.padding(12.dp)
+                )
+            } else {
+                // Markdown rendering for assistant messages
+                Markdown(
+                    content = message.content,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
         }
     }
 }
