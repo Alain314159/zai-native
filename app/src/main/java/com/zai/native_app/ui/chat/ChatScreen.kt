@@ -40,6 +40,7 @@ fun ChatScreen(
     val isStreaming by viewModel.isStreaming.collectAsState()
     val currentResponse by viewModel.currentResponse.collectAsState()
     val error by viewModel.error.collectAsState()
+    val selectedModel by tokenManager.selectedModel.collectAsState(initial = "glm-5.3")
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -63,7 +64,12 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Z.ai", color = Color.White) },
+                title = {
+                    Column {
+                        Text("Z.ai", color = Color.White, fontSize = 18.sp)
+                        Text(selectedModel, color = Color(0xFF666666), fontSize = 11.sp)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)

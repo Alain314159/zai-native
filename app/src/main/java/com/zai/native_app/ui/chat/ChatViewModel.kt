@@ -155,7 +155,13 @@ class ChatViewModel : ViewModel() {
                     }
 
                     override fun onError(message: String, code: Int) {
-                        _error.value = "Error $code: $message"
+                        if (code == 401 || code == 403) {
+                            _error.value = "Sesión expirada. Cierra sesión en Ajustes y vuelve a entrar."
+                        } else if (code == 0) {
+                            _error.value = "Sin conexión. Verifica tu internet."
+                        } else {
+                            _error.value = "Error $code: $message"
+                        }
                         _isStreaming.value = false
                     }
                 }
