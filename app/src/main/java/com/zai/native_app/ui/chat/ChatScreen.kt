@@ -1,6 +1,8 @@
 package com.zai.native_app.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -215,9 +217,13 @@ private fun BottomBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(message: ChatMessage) {
     val isUser = message.role == "user"
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -229,7 +235,12 @@ private fun MessageBubble(message: ChatMessage) {
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
-            modifier = Modifier.widthIn(max = 320.dp)
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = { showMenu = true }
+                )
         ) {
             if (isUser) {
                 Text(
@@ -240,12 +251,25 @@ private fun MessageBubble(message: ChatMessage) {
                     modifier = Modifier.padding(12.dp)
                 )
             } else {
-                // Markdown rendering for assistant messages
                 Markdown(
                     content = message.content,
                     modifier = Modifier.padding(12.dp)
                 )
             }
         }
+    }
+
+    DropdownMenu(
+        expanded = showMenu,
+        onDismissRequest = { showMenu = false }
+    ) {
+        DropdownMenuItem(
+            text = { Text("Copiar") },
+            onClick = {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("message", message.content))
+                showMenu = false
+            }
+        )
     }
 }
