@@ -176,6 +176,15 @@ class ChatViewModel : ViewModel() {
             viewModelScope.launch {
                 repository?.addMessage(chatId, "assistant", response, messageSeq++)
             }
+            // Vibrate to notify response complete
+            try {
+                val vibrator = android.os.Vibrator::class.java
+                // Use VibrationEffect on API 26+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val v = android.content.Context::class.java
+                    // Skip vibration for now - needs context
+                }
+            } catch (e: Exception) {}
         }
         _currentResponse.value = ""
         _isStreaming.value = false
@@ -185,6 +194,37 @@ class ChatViewModel : ViewModel() {
         currentEventSource?.cancel()
         currentEventSource = null
         currentChatId?.let { finalizeResponse(it) }
+    }
+
+    fun regenerateLast(tokenManager: TokenManager, context: android.content.Context) {
+        // Remove last assistant message if present
+        val msgs = _messages.value.toMutableList()
+        if (msgs.isNotEmpty() && msgs.last().role == "assistant") {
+            msgs.removeAt(msgs.size - 1)
+            _messages.value = msgs
+            // Remove from DB too
+            currentChatId?.let { chatId ->
+                viewModelScope.launch {
+                    val dbMsgs = repository?.getMessages(chatId) ?: emptyList()
+                    if (dbMsgs.isNotEmpty() && dbMsgs.last().role == "assistant") {
+                        // Decrement seq to reuse
+                        messageSeq = dbMsgs.last().seq
+                        // Delete the message
+                        repository?.deleteMessages(chatId)
+                        // Re-insert all except last
+                        val toReinsert = dbMsgs.dropLast(1)
+                        if (toReinsert.isNotEmpty()) {
+                            repository?.addMessage(chatId, toReinsert.last().role, toReinsert.last().content, toReinsert.last().seq)
+                        }
+                    }
+                }
+            }
+        }
+        // Find last user message and resend
+        val lastUserMsg = msgs.lastOrNull { it.role == "user" }
+        if (lastUserMsg != null) {
+            sendMessage(lastUserMsg.content, tokenManager, context)
+        }
     }
 
     override fun onCleared() {

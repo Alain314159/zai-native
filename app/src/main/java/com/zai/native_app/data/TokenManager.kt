@@ -26,7 +26,7 @@ class TokenManager(private val context: Context) {
     private val sharedPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     val token: Flow<String?> = context.dataStore.data.map { it[TOKEN_KEY] }
-    val selectedModel: Flow<String> = context.dataStore.data.map { it[MODEL_KEY] ?: "glm-5.3" }
+    val selectedModel: Flow<String> = context.dataStore.data.map { it[MODEL_KEY] ?: "x-preview-l" }
 
     suspend fun saveToken(token: String) {
         context.dataStore.edit { it[TOKEN_KEY] = token }
@@ -48,6 +48,6 @@ class TokenManager(private val context: Context) {
     }
 
     fun getModelSync(): String {
-        return sharedPrefs.getString(MODEL_PREF, "glm-5.3") ?: "glm-5.3"
+        return sharedPrefs.getString(MODEL_PREF, "x-preview-l") ?: "x-preview-l"
     }
 }
