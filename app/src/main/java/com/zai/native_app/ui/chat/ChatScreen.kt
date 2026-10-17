@@ -70,7 +70,10 @@ fun ChatScreen(
                 actions = {
                     IconButton(onClick = {
                         viewModel.newChat()
-                        navController.navigate("chat") { popUpTo("chat_list") }
+                        navController.navigate("chat") {
+                            popUpTo("chat_list") { inclusive = false }
+                            launchSingleTop = true
+                        }
                     }) {
                         Icon(Icons.Default.Add, contentDescription = "New Chat", tint = Color.White)
                     }

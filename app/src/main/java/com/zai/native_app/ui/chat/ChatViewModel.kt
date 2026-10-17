@@ -10,6 +10,7 @@ import com.zai.native_app.data.repo.ChatRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.sse.EventSource
 import com.google.gson.JsonParser
@@ -74,12 +75,14 @@ class ChatViewModel : ViewModel() {
                 apiClient = ZaiApiClient { tokenManager.getTokenSync() }
             }
 
+            val model = tokenManager.selectedModel.first()
+
             // Create local chat if needed
             val chatId = currentChatId ?: UUID.randomUUID().toString()
             if (currentChatId == null) {
                 currentChatId = chatId
                 val title = text.take(40)
-                repository?.createChat(chatId, title)
+                repository?.createChat(chatId, title, model)
             }
 
             // Save user message locally
@@ -90,9 +93,9 @@ class ChatViewModel : ViewModel() {
 
             // Send streaming message
             currentEventSource = apiClient?.sendStreamingMessage(
-                model = "glm-5.3",
+                model = model,
                 messages = messageHistory,
-                chatId = null, // don't send remote chat_id for now
+                chatId = null,
                 listener = object : StreamListener {
                     override fun onOpen() {}
 
