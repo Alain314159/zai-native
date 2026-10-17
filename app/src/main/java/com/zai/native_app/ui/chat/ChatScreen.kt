@@ -268,5 +268,3 @@ private fun MessageBubble(message: ChatMessage, context: android.content.Context
         }
     }
 }
-
-data class ChatMessage(val role: String, val content: String)
