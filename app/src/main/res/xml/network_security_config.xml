@@ -5,9 +5,12 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <domain-config cleartextTrafficPermitted="false">
+    <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">z.ai</domain>
         <domain includeSubdomains="true">chat.z.ai</domain>
-        <domain includeSubdomains="true">bigmodel.cn</domain>
+        <domain includeSubdomains="true">chatglm.cn</domain>
+        <domain includeSubdomains="true">chatglm.site</domain>
+        <domain includeSubdomains="true">z-cdn.chatglm.cn</domain>
+        <domain includeSubdomains="true">z-cdn.chatglm.site</domain>
     </domain-config>
 </network-security-config>
